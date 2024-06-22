@@ -1,0 +1,245 @@
+---
+title: "Trabalho 3"
+author: "Daniel"
+date: "2024-06-20"
+output: html_document
+---
+
+```{r}
+Siglas = read.csv("Sigla.csv")$Sigla
+
+lista = list()
+
+for(sigla in Siglas){
+  path = paste0("dataframes/", sigla, ".csv")
+  if(sigla == "af"){
+    paises = read.csv(path)$country
+  }
+  visa = read.csv(path)$visa
+  lista[[length(lista) + 1]] = visa
+}
+
+paises <- iconv(paises,"WINDOWS-1252","UTF-8")
+
+paises <- substr(paises, 1, nchar(paises)-1)
+
+tabela = do.call(cbind, lista) |> as.data.frame()
+
+colnames(tabela) = paises
+rownames(tabela) = paises
+```
+
+```{r}
+niveis = unlist(tabela) |> unique()
+```
+
+```{r}
+atribuir_nota <- function(entrada) {
+  if (grepl("not admitted", entrada)) {
+    return(0)
+  } else if (grepl("visa required", entrada)) {
+    return(1)
+  } else if (grepl("tourist card|tourist registration|pre-enrollment", entrada)) {
+    return(2)
+  } else if (grepl("visa on arrival|visa waiver|EVW", entrada)) {
+    return(3)
+  } else if (grepl("eVisa|eTA|eVisitors", entrada)) {
+    return(4)
+  } else if (grepl("visa-free", entrada)) {
+    return(5)
+  } else {
+    return(NA)
+  }
+}
+
+notas <- sapply(niveis, atribuir_nota)
+
+notas[1] = 0
+```
+
+```{r}
+f = function(vetor){
+  return(notas[match(vetor, niveis)])
+}
+
+matriz = sapply(tabela, f)
+
+rownames(matriz) = paises
+```
+
+```{r}
+library(igraph)
+
+nsample = 1:199
+
+amostra = matriz[nsample, nsample]
+
+edges = amostra
+edges[edges == 0] = 99
+edges = as.numeric(edges |> t())
+edges = edges[edges != 99]
+
+grafo = graph_from_adjacency_matrix(amostra, mode = "directed", weighted = TRUE)
+```
+
+```{r}
+clusters = cluster_walktrap(grafo, steps = 20)
+
+```
+
+
+```{r}
+library(rworldmap)
+
+data <- data.frame(country = clusters$names, value = clusters$membership)
+
+country_translation <- data.frame(
+  original_name = c("Congo (Dem. Rep.)", "Cote d'Ivoire (Ivory Coast)", "Eswatini", 
+                    "Micronesia", "North Macedonia", "Palestinian Territories", "Türkiye"),
+  package_name = c("Democratic Republic of the Congo", "Ivory Coast", "Swaziland", 
+                   "Micronesia", "North Macedonia", "Palestine", "Turkey")
+)
+
+# Perform the replacement
+for (i in seq_len(nrow(data))) {
+  original_name <- data$country[i]
+  if (original_name %in% country_translation$original_name) {
+    correct_name <- country_translation$package_name[country_translation$original_name == original_name]
+    data$country[i] <- correct_name
+  }
+}
+
+data$value = as.factor(data$value)
+
+mapped_data <- joinCountryData2Map(data, joinCode = "NAME", nameJoinColumn = "country",
+                                   verbose = TRUE)
+
+mapCountryData(mapped_data, nameColumnToPlot = "value", 
+               mapTitle = "Países em cada Cluster - Walktrap com 10 passos", 
+               colourPalette = "heat", 
+               oceanCol = "lightblue", 
+               missingCountryCol = "gray90")
+
+
+```
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+to_plot = matriz %>% 
+  as.data.frame() %>% 
+  mutate(PaisX = rownames(matriz)) %>%  
+  pivot_longer(cols = 1:199, names_to = "PaisY", values_to = "Valor")
+
+nomes = rownames(matriz)
+nomes = str_replace(nomes, "Palestinian Territories", "Palestine")
+
+niveis = nomes
+
+to_plot$PaisX = str_replace(to_plot$PaisX, "Palestinian Territories", "Palestine")
+to_plot$PaisY = str_replace(to_plot$PaisY, "Palestinian Territories", "Palestine")
+
+top_Passports = data.frame(Pais = niveis, Passport = rowSums(matriz)) %>% 
+  arrange(-Passport) %>% select(Pais) %>% unlist()
+
+to_plot$PaisX = factor(to_plot$PaisX, levels = rev(top_Passports))
+to_plot$PaisY = factor(to_plot$PaisY, levels = top_Passports)
+to_plot$Valor = factor(to_plot$Valor)
+
+
+
+ggplot(to_plot, aes(x = PaisY, y = PaisX, fill = Valor)) +
+  geom_tile() +
+  scale_fill_manual(values = c("#696969", "#FF6347", "#FFA500", 
+                               "#FFFF00", "#32CD32", "#4682B4")) +
+  scale_x_discrete(labels = NULL) +
+  scale_y_discrete(breaks = function(y) y[seq(1, length(y), 3)])+
+  labs(y = "País que Viaja", x = "País que Recebe")
+```
+
+```{r}
+nsample = 1:10
+
+amostra = matriz[nsample, nsample]
+
+edges = amostra
+edges[edges == 0] = 99
+edges = as.numeric(edges |> t())
+edges = edges[edges != 99]
+
+grafo = graph_from_adjacency_matrix(amostra, mode = "directed", weighted = TRUE)
+
+cores =c("#696969", "#FF6347", "#FFA500", 
+                               "#FFFF00", "#32CD32", "#4682B4")
+
+grafo %>%
+  set_edge_attr(
+    name = "color",
+    value = cores[edges+1]
+  ) %>%
+  plot(vertex.size=10, edge.curved = TRUE, vertex.label.color = "black")
+legend("bottomleft", inset=.02, title="Nível de Restrição",
+   c("1","2","3", "4", "5"), fill=cores[-1], horiz=TRUE, cex=0.8)
+```
+
+```{r}
+set.seed(236081)
+
+nsample = sample(1:199, 11)
+
+amostra = matriz[nsample, nsample]
+
+edges = amostra
+edges[edges == 0] = 99
+edges = as.numeric(edges |> t())
+edges = edges[edges != 99]
+
+grafo = graph_from_adjacency_matrix(amostra, mode = "directed", weighted = TRUE)
+
+cores =c("#696969", "#FF6347", "#FFA500", 
+                               "#FFFF00", "#32CD32", "#4682B4")
+
+grafo %>%
+  set_edge_attr(
+    name = "color",
+    value = cores[edges+1]
+  ) %>%
+  plot(vertex.size=10, edge.curved = TRUE, vertex.label.color = "black")
+legend("bottomleft", inset=.02, title="Nível de Restrição",
+   c("1","2","3", "4", "5"), fill=cores[-1], horiz=TRUE, cex=0.8)
+```
+
+```{r}
+pib = c("United States of America", "China", "Germany", "Japan", "India",
+        "United Kingdom", "France", "Italy", "Brazil", "Canada")
+
+nsample = match(pib, rownames(matriz))
+
+amostra = matriz[nsample, nsample]
+
+edges = amostra
+edges[edges == 0] = 99
+edges = as.numeric(edges |> t())
+edges = edges[edges != 99]
+
+grafo = graph_from_adjacency_matrix(amostra, mode = "directed", weighted = TRUE)
+
+cores =c("#696969", "#FF6347", "#FFA500", 
+                               "#FFFF00", "#32CD32", "#4682B4")
+
+grafo %>%
+  set_edge_attr(
+    name = "color",
+    value = cores[edges+1]
+  ) %>%
+  plot(vertex.size=10, edge.curved = TRUE, vertex.label.color = "black")
+legend("bottomleft", inset=.02, title="Nível de Restrição",
+   c("1","2","3", "4", "5"), fill=cores[-1], horiz=TRUE, cex=0.8)
+```
+
+
+
+
+
