@@ -1,0 +1,96 @@
+import pandas as pd
+from selenium import webdriver
+import time
+from bs4 import BeautifulSoup
+from selenium.webdriver.common.by import By
+from selenium.webdriver import Firefox
+from webdriver_manager.firefox import GeckoDriverManager
+from selenium.webdriver.firefox.service import Service
+import requests
+from PIL import Image
+import os
+import csv
+import unicodedata
+import re
+
+driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()))
+
+url = 'https://www.passportindex.org/comparebyDestination.php?'
+driver.get(url)
+
+soup = BeautifulSoup(driver.page_source, 'html.parser')
+
+images = soup.find_all('img')
+
+src_list = [img['src'] for img in images]
+
+def extract_two_letters(url):
+    match = re.search(r'(\w{2})\.png$', url)
+    if match:
+        return match.group(1)
+    return None
+
+def remove_odds(s):
+    return s[::2]
+
+def remove_even(s):
+    return s[1::2]
+
+result_list = [extract_two_letters(url) for url in src_list[3:]]
+
+driver.quit()
+
+import os
+
+directory = "dataframes"
+
+original_list = result_list[:]
+
+csv_files = [f[:-4] for f in os.listdir(directory) if f.endswith(".csv")]
+
+resultado = [item for item in original_list if item not in csv_files]
+
+print(resultado)
+
+pasta = "dataframes"
+
+filename = "Sigla.csv"
+
+with open(filename, mode='w', newline='') as file:
+    writer = csv.writer(file)
+    writer.writerow(["Sigla"])
+    for item in result_list:
+        writer.writerow([item])
+
+url1 = "https://www.passportindex.org/comparebyDestination.php?p1="
+
+url2 = "&y1=2024"
+
+for pais in resultado:
+    nome_arquivo = pais + ".csv"
+    caminho_arquivo = os.path.join(pasta, nome_arquivo)
+    url = url1 + pais + url2
+    
+    driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()))
+    driver.get(url)
+    
+    time.sleep(5)
+    
+
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
+    
+    elements = soup.select('td.col-sm-2.col-xs-4')
+    all_text = [element.get_text() for element in elements]
+
+    visa = [value for index, value in enumerate(all_text) if index % 3 == 1]
+    country = [value for index, value in enumerate(all_text) if index % 3 == 0]
+    
+    dados = list(zip(visa, country))
+    
+    with open(caminho_arquivo, mode='w', newline='') as arquivo_csv:
+        escritor_csv = csv.writer(arquivo_csv)
+        escritor_csv.writerow(["visa", "country"])
+        escritor_csv.writerows(dados)
+    driver.quit()
+    
+driver.quit()
